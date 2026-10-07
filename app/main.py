@@ -16,6 +16,7 @@ from aiogram.types import ErrorEvent, Message
 
 from app.config import get_settings
 from app.credit import CreditService
+from app.keep_alive import keep_alive
 from app.database import SessionLocal, init_db
 from app.game_engine import GameEngine
 from app.keyboards import mandatory_sub_keyboard
@@ -405,6 +406,8 @@ async def main() -> None:
         misfire_grace_time=3600,
     )
     await set_commands(bot)
+
+    keep_alive()
 
     try:
         await dp.start_polling(
