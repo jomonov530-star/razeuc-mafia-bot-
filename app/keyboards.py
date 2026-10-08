@@ -113,6 +113,7 @@ def start_menu_keyboard(
     add_url = f"https://t.me/{_clean_bot_username(settings.bot_username)}?startgroup=true"
     rows = [
         [InlineKeyboardButton(text=t(lang, "add_to_group"), url=add_url)],
+        [InlineKeyboardButton(text="👤 Profil", callback_data="profile:open", style="primary")],
         [InlineKeyboardButton(text=t(lang, "premium_groups"), callback_data="premium:info")],
         [
             InlineKeyboardButton(text=t(lang, "lang"), callback_data="lang:menu:user:0", style="success"),
@@ -120,7 +121,7 @@ def start_menu_keyboard(
         ],
     ]
     if news_url:
-        rows.insert(3, [InlineKeyboardButton(text=t(lang, "news"), url=news_url, style="success")])
+        rows.insert(4, [InlineKeyboardButton(text=t(lang, "news"), url=news_url, style="success")])
     if is_admin:
         rows.append([InlineKeyboardButton(text="🛡 Admin panel", callback_data="owner:panel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
