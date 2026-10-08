@@ -7,6 +7,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, LabeledPrice, Message
 
+from app import premium_emoji
 from app.config import Settings
 from app.game_engine import GameEngine
 from app.keyboards import (
@@ -17,6 +18,10 @@ from app.keyboards import (
     owner_channel_gift_mode_keyboard,
     owner_channel_gifts_keyboard,
     owner_diamond_audit_keyboard,
+    owner_emoji_clear_confirm_keyboard,
+    owner_emoji_list_keyboard,
+    owner_emoji_menu_keyboard,
+    owner_emoji_roles_keyboard,
     owner_diamond_top_keyboard,
     owner_dollar_top_keyboard,
     owner_gamble_keyboard,
@@ -39,6 +44,7 @@ PENDING_OWNER_ACTIONS: dict[int, str] = {}
 PENDING_PREMIUM_GROUPS: dict[int, dict[str, Union[str, int]]] = {}
 PENDING_INVOICE_DATA: dict[int, dict[str, Union[str, int]]] = {}
 PENDING_CHANNEL_GIFTS: dict[int, dict[str, Union[str, int]]] = {}
+PENDING_EMOJI_TARGET: dict[int, str] = {}
 
 
 async def _is_owner(user_id: int, engine: GameEngine, role: str = "any") -> bool:
@@ -1008,6 +1014,45 @@ async def _handle_pending_owner_message(message: Message, engine: GameEngine, se
     if action is None:
         return False
 
+    if action == "emoji_pick":
+        char = premium_emoji.first_emoji(message.text or message.caption or "")
+        if not char:
+            PENDING_OWNER_ACTIONS[message.from_user.id] = "emoji_pick"
+            await message.answer(
+                "❌ Emoji topilmadi. Almashtirmoqchi bo'lgan <b>oddiy emoji</b>ni yuboring (masalan 🧍).",
+                reply_markup=owner_wait_keyboard(),
+            )
+            return True
+        PENDING_EMOJI_TARGET[message.from_user.id] = char
+        PENDING_OWNER_ACTIONS[message.from_user.id] = "emoji_set"
+        await message.answer(_emoji_ask_premium_text(char), reply_markup=owner_wait_keyboard())
+        return True
+
+    if action == "emoji_set":
+        char = PENDING_EMOJI_TARGET.get(message.from_user.id)
+        entities = list(message.entities or []) + list(message.caption_entities or [])
+        custom = next((e for e in entities if e.type == "custom_emoji" and e.custom_emoji_id), None)
+        if not char:
+            await message.answer("Jarayon eskirgan. Qaytadan boshlang.", reply_markup=owner_emoji_menu_keyboard())
+            return True
+        if custom is None:
+            PENDING_OWNER_ACTIONS[message.from_user.id] = "emoji_set"
+            await message.answer(
+                "❌ Premium emoji topilmadi. Aynan <b>premium (animatsion) emoji</b> yuboring.\n"
+                "Oddiy emoji yoki sticker bu yerda ishlamaydi.",
+                reply_markup=owner_wait_keyboard(),
+            )
+            return True
+        await premium_emoji.set_mapping(engine.session_factory, char, custom.custom_emoji_id)
+        PENDING_EMOJI_TARGET.pop(message.from_user.id, None)
+        await message.answer(
+            f"✅ Saqlandi: {char} → <tg-emoji emoji-id=\"{custom.custom_emoji_id}\">{char}</tg-emoji>\n"
+            f"ID: <code>{custom.custom_emoji_id}</code>\n\n"
+            "Endi botdagi shu emoji (xabar va tugmalarda) premium bo'lib chiqadi.",
+            reply_markup=owner_emoji_menu_keyboard(),
+        )
+        return True
+
     if action == "invoice_amount":
         parts = (message.text or "").split()
         if len(parts) != 2 or not all(part.isdigit() for part in parts):
@@ -1672,6 +1717,139 @@ async def owner_sched_broadcast_callback(callback: CallbackQuery, engine: GameEn
         reply_markup=owner_wait_keyboard(),
     )
     await callback.answer()
+
+
+
+# --- PREMIUM EMOJI SOZLAMALARI ---------------------------------------------------------
+
+
+def _emoji_ask_premium_text(char: str) -> str:
+    return (
+        f"2/2. <b>{char}</b> o'rniga qo'yiladigan <b>premium emoji</b>ni yuboring.\n\n"
+        "Faqat bitta premium emoji yuboring (Telegram Premium akkauntingizdan)."
+    )
+
+
+async def _emoji_guard(callback: CallbackQuery, engine: GameEngine) -> bool:
+    if callback.from_user is None or not await _is_owner(callback.from_user.id, engine, "super_admin"):
+        await callback.answer("Ruxsat yo'q.", show_alert=True)
+        return False
+    return True
+
+
+def _emoji_menu_text() -> str:
+    count = len(premium_emoji.get_map())
+    return (
+        "✨ <b>Premium emoji</b>\n\n"
+        "Botdagi istalgan oddiy emoji o'rniga premium emoji qo'yishingiz mumkin. "
+        "U xabarlarda ham, tugmalarda ham avtomatik almashadi.\n\n"
+        f"Hozir almashtirilgan: <b>{count}</b> ta"
+    )
+
+
+@router.callback_query(F.data == "owner:emoji")
+async def owner_emoji_menu_callback(callback: CallbackQuery, engine: GameEngine, settings: Settings) -> None:
+    if not await _emoji_guard(callback, engine):
+        return
+    PENDING_OWNER_ACTIONS.pop(callback.from_user.id, None)
+    PENDING_EMOJI_TARGET.pop(callback.from_user.id, None)
+    await _safe_edit(callback, _emoji_menu_text(), reply_markup=owner_emoji_menu_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "owner:emoji_add")
+async def owner_emoji_add_callback(callback: CallbackQuery, engine: GameEngine, settings: Settings) -> None:
+    if not await _emoji_guard(callback, engine):
+        return
+    PENDING_OWNER_ACTIONS[callback.from_user.id] = "emoji_pick"
+    await _safe_edit(
+        callback,
+        "1/2. Almashtirmoqchi bo'lgan <b>oddiy emoji</b>ni yuboring.\n\n"
+        "Masalan: <code>🧍</code>, <code>🛒</code>, <code>💊</code>",
+        reply_markup=owner_wait_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "owner:emoji_roles")
+async def owner_emoji_roles_callback(callback: CallbackQuery, engine: GameEngine, settings: Settings) -> None:
+    if not await _emoji_guard(callback, engine):
+        return
+    await _safe_edit(
+        callback,
+        "🎭 <b>Rollar emojilari</b>\n\nPremium qilmoqchi bo'lgan rolni tanlang:",
+        reply_markup=owner_emoji_roles_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("owner:emoji_role:"))
+async def owner_emoji_role_pick_callback(callback: CallbackQuery, engine: GameEngine, settings: Settings) -> None:
+    if not await _emoji_guard(callback, engine):
+        return
+    from app.enums import Role
+    from app.roles import ROLE_META
+
+    try:
+        meta = ROLE_META[Role(callback.data.split(":", 2)[2])]
+    except (ValueError, KeyError):
+        await callback.answer("Rol topilmadi.", show_alert=True)
+        return
+    PENDING_EMOJI_TARGET[callback.from_user.id] = meta.emoji
+    PENDING_OWNER_ACTIONS[callback.from_user.id] = "emoji_set"
+    await _safe_edit(callback, _emoji_ask_premium_text(meta.emoji), reply_markup=owner_wait_keyboard())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "owner:emoji_list")
+async def owner_emoji_list_callback(callback: CallbackQuery, engine: GameEngine, settings: Settings) -> None:
+    if not await _emoji_guard(callback, engine):
+        return
+    items = sorted(premium_emoji.get_map())
+    mapping = premium_emoji.get_map()
+    if items:
+        lines = [f"{char} → <code>{mapping[char]}</code>" for char in items]
+        text = "📋 <b>Almashtirilgan emojilar</b>\n\n" + "\n".join(lines)
+    else:
+        text = "📋 Hali hech qanday emoji almashtirilmagan."
+    await _safe_edit(callback, text, reply_markup=owner_emoji_list_keyboard(items))
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("owner:emoji_del:"))
+async def owner_emoji_delete_callback(callback: CallbackQuery, engine: GameEngine, settings: Settings) -> None:
+    if not await _emoji_guard(callback, engine):
+        return
+    items = sorted(premium_emoji.get_map())
+    try:
+        char = items[int(callback.data.split(":", 2)[2])]
+    except (ValueError, IndexError):
+        await callback.answer("Ro'yxat yangilandi, qayta oching.", show_alert=True)
+        return
+    await premium_emoji.remove_mapping(engine.session_factory, char)
+    await callback.answer("O'chirildi.")
+    await owner_emoji_list_callback(callback, engine, settings)
+
+
+@router.callback_query(F.data == "owner:emoji_clear")
+async def owner_emoji_clear_callback(callback: CallbackQuery, engine: GameEngine, settings: Settings) -> None:
+    if not await _emoji_guard(callback, engine):
+        return
+    await _safe_edit(
+        callback,
+        "🧹 Barcha almashtirilgan emojilar o'chiriladi (bot asl holiga qaytadi). Davom etamizmi?",
+        reply_markup=owner_emoji_clear_confirm_keyboard(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "owner:emoji_clear_yes")
+async def owner_emoji_clear_yes_callback(callback: CallbackQuery, engine: GameEngine, settings: Settings) -> None:
+    if not await _emoji_guard(callback, engine):
+        return
+    await premium_emoji.clear_all(engine.session_factory)
+    await _safe_edit(callback, _emoji_menu_text(), reply_markup=owner_emoji_menu_keyboard())
+    await callback.answer("Tozalandi.")
 
 
 

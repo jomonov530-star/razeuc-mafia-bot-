@@ -6,6 +6,7 @@ from typing import Optional
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
 from app.config import Settings
+from app import premium_emoji
 from app.enums import Role
 from app.roles import ACTIVE_ROLE_POOL, SHOP_ROLE_CATALOG, role_label
 from app.texts import t
@@ -126,16 +127,17 @@ def start_menu_keyboard(
 
 
 def _toggle_button(icon: str, field: str, user: object | None) -> InlineKeyboardButton:
+    """Toggle tugma: faqat premium emoji (icon_custom_emoji_id) + ON/OFF yozuvi.
 
-    """Create a toggle button with standard emoji fallback text for non-Premium users,
-    plus custom emoji ID for Telegram Premium custom emoji rendering.
+    Oddiy emoji matnga yozilmaydi, shunda tugmada ikkita emoji yonma-yon chiqib qolmaydi.
+    Premium ID admin paneldan (✨ Premium emoji) almashtirilgan bo'lsa, o'sha ishlatiladi.
     """
     enabled = getattr(user, field, True) is not False
     kwargs = {"style": "primary" if enabled else "danger"}
-    emoji_id = PROFILE_EMOJI_BY_FIELD.get(field)
+    emoji_id = premium_emoji.resolve_id(icon, PROFILE_EMOJI_BY_FIELD.get(field))
     if emoji_id:
         kwargs["icon_custom_emoji_id"] = emoji_id
-    return InlineKeyboardButton(text=icon, callback_data=f"invtoggle:{field}", **kwargs)
+    return InlineKeyboardButton(text="ON" if enabled else "OFF", callback_data=f"invtoggle:{field}", **kwargs)
 
 
 def profile_dashboard_keyboard(
@@ -1161,6 +1163,7 @@ def owner_panel_keyboard(role: str = "super_admin") -> InlineKeyboardMarkup:
 
     if role == "super_admin":
         rows.extend([
+            [InlineKeyboardButton(text="✨ Premium emoji", callback_data="owner:emoji", style="primary")],
             [InlineKeyboardButton(text="🛡 Sub-Adminlar (Moderatorlar)", callback_data="owner:sub_admins")],
             [InlineKeyboardButton(text="🎟 Promokodlar & Vaucherlar", callback_data="owner:promo_codes")],
             [InlineKeyboardButton(text="📈 Analitika & DAU/MAU", callback_data="owner:analytics")],
@@ -1435,6 +1438,55 @@ def owner_wait_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="❌ Bekor qilish", callback_data="owner:cancel")],
+        ]
+    )
+
+
+def owner_emoji_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Emoji almashtirish", callback_data="owner:emoji_add", style="success")],
+            [InlineKeyboardButton(text="🎭 Rollar emojilari", callback_data="owner:emoji_roles")],
+            [InlineKeyboardButton(text="📋 Ro'yxat / o'chirish", callback_data="owner:emoji_list")],
+            [InlineKeyboardButton(text="⬅️ Admin panel", callback_data="owner:panel")],
+        ]
+    )
+
+
+def owner_emoji_roles_keyboard() -> InlineKeyboardMarkup:
+    from app.roles import ROLE_META
+
+    rows: list[list[InlineKeyboardButton]] = []
+    current: list[InlineKeyboardButton] = []
+    for role, meta in ROLE_META.items():
+        current.append(
+            InlineKeyboardButton(text=f"{meta.emoji} {meta.title_uz}", callback_data=f"owner:emoji_role:{role.value}")
+        )
+        if len(current) == 2:
+            rows.append(current)
+            current = []
+    if current:
+        rows.append(current)
+    rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="owner:emoji")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def owner_emoji_list_keyboard(items: list[str]) -> InlineKeyboardMarkup:
+    rows = [
+        [InlineKeyboardButton(text=f"🗑 {char} ni o'chirish", callback_data=f"owner:emoji_del:{idx}")]
+        for idx, char in enumerate(items)
+    ]
+    if items:
+        rows.append([InlineKeyboardButton(text="🧹 Hammasini tozalash", callback_data="owner:emoji_clear")])
+    rows.append([InlineKeyboardButton(text="⬅️ Orqaga", callback_data="owner:emoji")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def owner_emoji_clear_confirm_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Ha, tozalash", callback_data="owner:emoji_clear_yes", style="danger")],
+            [InlineKeyboardButton(text="❌ Yo'q", callback_data="owner:emoji_list")],
         ]
     )
 

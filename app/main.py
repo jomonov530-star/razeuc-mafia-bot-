@@ -17,6 +17,7 @@ from aiogram.types import ErrorEvent, Message
 from app.config import get_settings
 from app.credit import CreditService
 from app.keep_alive import keep_alive
+from app import premium_emoji
 from app.database import SessionLocal, init_db
 from app.game_engine import GameEngine
 from app.keyboards import mandatory_sub_keyboard
@@ -300,6 +301,8 @@ async def main() -> None:
     await init_db()
 
     bot = Bot(settings.bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot.session.middleware(premium_emoji.PremiumEmojiMiddleware())
+    await premium_emoji.load(SessionLocal)
     me = await bot.get_me()
     if me.username:
         settings.bot_username = me.username
