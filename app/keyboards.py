@@ -128,17 +128,18 @@ def start_menu_keyboard(
 
 
 def _toggle_button(icon: str, field: str, user: object | None) -> InlineKeyboardButton:
-    """Toggle tugma: faqat premium emoji (icon_custom_emoji_id) + ON/OFF yozuvi.
+    """Toggle tugma: faqat premium emoji (icon_custom_emoji_id), yozuvsiz.
 
-    Oddiy emoji matnga yozilmaydi, shunda tugmada ikkita emoji yonma-yon chiqib qolmaydi.
+    Yoqilgan = yashil, o'chirilgan = qizil. Telegram bo'sh matnni qabul qilmagani uchun
+    ko'rinmas belgi (U+2800) ishlatiladi, shunda tugmada faqat bitta emoji ko'rinadi.
     Premium ID admin paneldan (✨ Premium emoji) almashtirilgan bo'lsa, o'sha ishlatiladi.
     """
     enabled = getattr(user, field, True) is not False
-    kwargs = {"style": "primary" if enabled else "danger"}
+    kwargs = {"style": "success" if enabled else "danger"}
     emoji_id = premium_emoji.resolve_id(icon, PROFILE_EMOJI_BY_FIELD.get(field))
     if emoji_id:
         kwargs["icon_custom_emoji_id"] = emoji_id
-    return InlineKeyboardButton(text="ON" if enabled else "OFF", callback_data=f"invtoggle:{field}", **kwargs)
+    return InlineKeyboardButton(text="\u2800", callback_data=f"invtoggle:{field}", **kwargs)
 
 
 def profile_dashboard_keyboard(
@@ -155,6 +156,8 @@ def profile_dashboard_keyboard(
             _toggle_button("🧿", "use_killer_protection", user),
             _toggle_button("⚖️", "use_vote_protection", user),
             _toggle_button("💊", "use_drug_protection", user),
+        ],
+        [
             _toggle_button("📦", "use_miner_protection", user),
             _toggle_button("🎭", "use_mask", user),
             _toggle_button("📁", "use_fake_document", user),
